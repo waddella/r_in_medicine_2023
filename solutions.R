@@ -4,8 +4,8 @@
 
 
 # Install rtables packages and dependencies ----
-install.packages(c("rtables", "remotes"))
-remotes::install_github("insightsengineering/rtables", ref = "qtable_and_experimental_ard") # for workshop
+# install.packages(c("rtables", "remotes"))
+# remotes::install_github("insightsengineering/rtables") # for workshop
 
 
 # Getting started ----
@@ -58,71 +58,150 @@ tbl <- build_table(lyt, ex_adsl)
 print(tbl)
 
 
-# Layout Generating Functions ----
+#  Deriving cell values ----
 
-
-
-
-# NAs > always shown in rtables
-ex_adsl$COUNTRY[1] <- NA
-table(ex_adsl$COUNTRY, ex_adsl$ARM, useNA = "always")
-qtable(ex_adsl, "COUNTRY", "ARM", ...)
-
-# using different aggregation function
-aggregate(...)
-qtable(ex_adsl, "COUNTRY", "ARM", aval = "AGE", afun = mean)
-
-
-
-# nested 2
-qtable(ex_adsl, c("COUNTRY", "SEX"), c("ARM", "ITTFL"))
-
-# back to a simple example
-qtable(ex_adsl, "COUNTRY", "ARM", aval = "AGE", afun = mean)
-
-# multiple values
-fivenum2 <- \(x) setNames(as.list(fivenum(x)), c("min", "Q1", "MED", "Q3", "max"))
-qtable(ex_adsl, "COUNTRY", "ARM", aval = "AGE", afun = fivenum2)
-
-# now to normal rtable framework
 lyt <- basic_table() |>
-  split_rows() |>
-  split_cols() |>
-  analyze()
+  analyze("AGE")
 
-basic_table(lyt, ex_adsl)
+build_table(lyt, ex_adsl)
 
-# nested
+
+# in_rows use and formatting options
+fivenum_afun <- function(x) {
+  in_rows(n = sum(!is.na(x)),
+          "mean (sd)" = c(mean(x), sd(x)),
+          median = median(x),
+          "min - max" = range(x),
+          .formats = c(n = "xx",
+                       "mean (sd)" = "xx.x (xx.x)",
+                       median = "xx.x",
+                       "min - max" = "xx.x - xx.x"))
+}
+
+lyt2 <- basic_table() %>% analyze("AGE", fivenum_afun)
+
+build_table(lyt2, ex_adsl)
+
+
+# Cell Value Formatting  ----
+
+rcell(1.234567, "xx.xx")
+rcell(c(1, 0.1), "xx.xx (xx.xx%)")
+
+formatters::list_valid_format_labels()
+
+example(table_shell)
+
+
+
+# Percentages ----
+pct_afun <- function(x, .N_col) {
+  rcell(
+    sum(!is.na(x)) * c(1, 1/.N_col),
+    format = "xx (xx.x%)"
+  )
+}
+
 lyt <- basic_table() |>
-  split_rows() |>
-  split_rows() |>
-  split_cols() |>
-  analyze()
+  analyze("AGE", pct_afun)
 
-basic_table(lyt, ex_adsl)
+build_table(lyt, ex_adsl)
 
 
-# what we learn today
+# Faceting ----
 
-# adverse events table
+## Column Faceting
+library(ggplot2)
+ggplot(ex_adsl, mapping = aes(x = AGE)) +
+  geom_boxplot() +
+  facet_grid(cols = vars(ARM))
 
-# .... now to rtables theory
+lyt <- basic_table() |>
+  split_cols_by("ARM") |>
+  analyze("AGE", range, format = "xx.xx - xx.xx")
 
-# faceting (ggplot2)
-#  - tables are graphic
-# layouts
-# row summaries
-# formatting (xx.xx)
-# N=xx & alternative counts
-# indent
-# ae table re-visitted
+build_table(lyt, ex_adsl)
 
-# tlg-catalog
-# tern afun, sfun, hfun
+## Row Faceting
+ggplot(ex_adsl, mapping = aes(x = AGE)) +
+  geom_boxplot() +
+  facet_grid(rows = vars(SEX))
 
-# model based table
+lyt2 <- basic_table() |>
+  split_rows_by("SEX") |>
+  analyze("AGE", range,
+          format = "xx.xx - xx.xx")
 
-# split fun
-# tree
-# pathing (cross-checking & rmarkdown)
-# prune
+build_table(lyt2, ex_adsl)
+
+## Grid Faceting
+
+ggplot(ex_adsl, mapping = aes(x = AGE)) +
+  geom_boxplot() +
+  facet_grid(rows = vars(SEX),
+             cols = vars(ARM))
+
+lyt3 <- basic_table() |>
+  split_cols_by("ARM") |>
+  split_rows_by("SEX") |>
+  analyze("AGE", range, format = "xx.xx - xx.xx")
+
+build_table(lyt3, ex_adsl)
+
+# Nested Splits ----
+library(dplyr)
+
+ex_adsl2 <- ex_adsl |>
+  filter(SEX %in% c("M", "F"))
+
+ggplot(ex_adsl2, mapping = aes(x = AGE)) +
+  geom_boxplot() +
+  facet_grid(cols = vars(ARM, SEX))
+
+lyt <- basic_table() |>
+  split_cols_by("ARM") |>
+  split_cols_by("SEX", split_fun = drop_split_levels) |>
+  analyze("AGE", mean, format = "xx.xx")
+
+tbl <- build_table(lyt, ex_adsl2)
+
+print(tbl)
+
+
+# Group Summaries
+ex_adsl3 <- ex_adsl |>
+  mutate(B1HL = factor(ifelse(BMRKR1 > mean(BMRKR1), "H", "L"), levels = c("L", "H")))
+
+lyt <- basic_table() |>
+  split_cols_by("ARM") |>
+  split_rows_by("SEX") |>
+  split_rows_by("B1HL") |>
+  analyze("AGE", \(x) list(B = "a"))
+
+build_table(lyt, ex_adsl3)
+
+lyt <- basic_table() |>
+  split_cols_by("ARM") |>
+  summarize_row_groups() |>
+  split_rows_by("SEX") |>
+  summarize_row_groups() |>
+  split_rows_by("B1HL") |>
+  summarize_row_groups() |>
+  analyze("AGE", \(x) list(B = "a"))
+
+build_table(lyt, ex_adsl3)
+
+
+# Group Summaries in qtable ----
+qtable(ex_adsl3, c("SEX", "B1HL"), "ARM", avar = "AGE", afun = \(x) list(B = "a"))
+
+qtable(ex_adsl3, c("SEX", "B1HL"), "ARM", avar = "AGE", afun = \(x) list(B = "a"), summarize_groups = TRUE)
+
+# Complex Tables ----
+# code can be found here:
+# https://github.com/insightsengineering/adv_rtables_training/blob/main/training2.Rmd#L627
+
+
+# Analysis Reporting Datasets (ARDs) ----
+
+
